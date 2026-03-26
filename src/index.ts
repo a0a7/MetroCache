@@ -5,12 +5,19 @@
 
 export default {
 	async fetch(request, env, ctx): Promise<Response> {
+		const url = new URL(request.url);
 		const cache = caches.default;
-		const cacheKey = new Request(request.url);
+		
+		// Check if raw data endpoint is requested
+		const showRaw = url.pathname === '/raw';
+		
+		// Create cache key (use base URL without query params for consistent caching)
+		const cacheKey = new Request(url.origin + url.pathname);
 
-		// Try cache first
+		// Try cache first (unless ?nocache is present)
+		const bypassCache = url.searchParams.has('nocache');
 		let response = await cache.match(cacheKey);
-		if (response) {
+		if (response && !bypassCache) {
 			return response;
 		}
 
@@ -35,46 +42,77 @@ export default {
 				const url = `https://svc.metrotransit.org/NexTrip/${stop.id}?format=json`;
 
 				const res = await fetch(url);
-				const data = await res.json() as any[];
+				if (!res.ok) {
+					throw new Error(`API returned ${res.status}: ${res.statusText}`);
+				}
+				
+				const data = await res.json() as any;
 
-				const departures = data.map((d: any) => ({
-					route: d.Route,
-					destination: d.Destination,
-					direction: d.Direction,
-					departure_text: d.DepartureText,
-					departure_time: new Date(
-						parseInt(d.DepartureTime.replace(/[^0-9]/g, ""))
-					).toISOString(),
-					vehicle: d.VehicleLabel
+				// Extract departures array from response
+				const departuresArray = data.departures || [];
+
+				const departures = departuresArray.map((d: any) => ({
+					route: d.route_short_name,
+					destination: d.description,
+					direction: d.direction_text,
+					departure_text: d.departure_text,
+					departure_time: d.departure_time,
+					actual: d.actual,
+					trip_id: d.trip_id
 				}));
 
 				return {
 					stop_id: stop.id,
 					name: stop.name,
-					departures
+					departures,
+					raw_data: data // Include raw response for debugging
 				};
 
 			} catch (e) {
 				return {
 					stop_id: stop.id,
 					name: stop.name,
-					error: String(e)
+					error: String(e),
+					message: e instanceof Error ? e.message : 'Unknown error'
 				};
 			}
 		};
 
 		const results = await Promise.all(stops.map(fetchStop));
 
-		const body = JSON.stringify({
-			timestamp: new Date().toISOString(),
-			stops: results
-		}, null, 2);
+		let body: string;
+		if (showRaw) {
+			// Raw endpoint - show full API responses
+			body = JSON.stringify({
+				timestamp: new Date().toISOString(),
+				stops: results.map(r => ({
+					stop_id: r.stop_id,
+					name: r.name,
+					raw_data: r.raw_data,
+					error: r.error,
+					message: r.message
+				}))
+			}, null, 2);
+		} else {
+			// Normal endpoint - show formatted data
+			body = JSON.stringify({
+				timestamp: new Date().toISOString(),
+				stops: results.map(r => ({
+					stop_id: r.stop_id,
+					name: r.name,
+					departures: r.departures,
+					error: r.error,
+					message: r.message
+				}))
+			}, null, 2);
+		}
 
 		response = new Response(body, {
 			headers: {
 				"Content-Type": "application/json",
 				"Cache-Control": "public, max-age=300",
-				"Access-Control-Allow-Origin": "*"
+				"Access-Control-Allow-Origin": "*",
+				"X-Cache-Status": bypassCache ? "BYPASS" : "MISS"
 			}
 		});
 

@@ -6,7 +6,6 @@ declare namespace Cloudflare {
 		mainModule: typeof import("./src/index");
 	}
 	interface Env {
-		MY_QUEUE: Queue;
 	}
 }
 interface Env extends Cloudflare.Env {}

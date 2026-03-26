@@ -4,7 +4,7 @@
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "wild-wildflower-d266",
+	"name": "metrocache",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-03-17",
 	"observability": {
@@ -12,15 +12,8 @@
 	},
 	"queues": {
 		"consumers": [
-			{
-				"queue": "my-queue"
-			}
 		],
 		"producers": [
-			{
-				"binding": "MY_QUEUE",
-				"queue": "my-queue"
-			}
 		]
 	},
 	"upload_source_maps": true,
